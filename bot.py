@@ -1,12 +1,17 @@
 import logging
-import sqlite3
+#import sqlite3
 import os
 import re
 import asyncio
+import psycopg2#
+from psycopg2.extras import RealDictCursor#
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.ext import JobQueue
+
+# ДОБАВЬ ПОСЛЕ ИМПОРТОВ:
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 # Глобальный словарь для отслеживания отправленных уведомлений
 # Формат: {hash_id: message_id}
@@ -56,56 +61,59 @@ logger = logging.getLogger(__name__)
 
 # ==================== БАЗА ДАННЫХ ====================
 
-def init_database():
-    """Создаем базу данных с нужными таблицами"""
-    conn = sqlite3.connect('library.db')
-    cursor = conn.cursor()
-    
-    # Таблица библиотек
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS libraries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            description TEXT,
-            notifications_enabled BOOLEAN DEFAULT FALSE
-        )
-    ''')
-    
-    # Таблица хешей
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS hashes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            library_id INTEGER,
-            hash_text TEXT NOT NULL,
-            phone_number TEXT NOT NULL,
-            status TEXT DEFAULT '',
-            time_text TEXT DEFAULT '00:00',
-            FOREIGN KEY (library_id) REFERENCES libraries (id)
-        )
-    ''')
-    
-    # Проверяем и добавляем колонки если их нет
-    try:
-        cursor.execute("SELECT phone_type FROM hashes LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE hashes ADD COLUMN phone_type TEXT DEFAULT ''")
-        print("✅ Добавлена колонка phone_type в таблицу hashes")
-    
-    try:
-        cursor.execute("SELECT missed_cycles FROM hashes LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE hashes ADD COLUMN missed_cycles INTEGER DEFAULT 0")
-        print("✅ Добавлена колонка missed_cycles в таблицу hashes")
-    
-    try:
-        cursor.execute("SELECT next_notification FROM hashes LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE hashes ADD COLUMN next_notification TEXT DEFAULT ''")
-        print("✅ Добавлена колонка next_notification в таблицу hashes")
-    
-    conn.commit()
-    conn.close()
-    print("✅ База данных создана!")
+#def init_database():
+#    """Создаем базу данных с нужными таблицами"""
+#    conn = get_connection()
+#    cursor = conn.cursor()
+#    
+#    # Таблица библиотек
+#    cursor.execute('''
+#        CREATE TABLE IF NOT EXISTS libraries (
+#            id INTEGER PRIMARY KEY AUTOINCREMENT,
+#            name TEXT UNIQUE NOT NULL,
+#            description TEXT,
+#            notifications_enabled BOOLEAN DEFAULT FALSE
+#        )
+#    ''')
+#   
+#    # Таблица хешей
+#    cursor.execute('''
+#        CREATE TABLE IF NOT EXISTS hashes (
+#            id INTEGER PRIMARY KEY AUTOINCREMENT,
+#            library_id INTEGER,
+#            hash_text TEXT NOT NULL,
+#            phone_number TEXT NOT NULL,
+#            status TEXT DEFAULT '',
+#            time_text TEXT DEFAULT '00:00',
+#            FOREIGN KEY (library_id) REFERENCES libraries (id)
+#        )
+#    ''')
+#    
+#    # Проверяем и добавляем колонки если их нет
+#    try:
+#        cursor.execute("SELECT phone_type FROM hashes LIMIT 1")
+#    except sqlite3.OperationalError:
+#        cursor.execute("ALTER TABLE hashes ADD COLUMN phone_type TEXT DEFAULT ''")
+#        print("✅ Добавлена колонка phone_type в таблицу hashes")
+#    
+#    try:
+#        cursor.execute("SELECT missed_cycles FROM hashes LIMIT 1")
+#    except sqlite3.OperationalError:
+#        cursor.execute("ALTER TABLE hashes ADD COLUMN missed_cycles INTEGER DEFAULT 0")
+#        print("✅ Добавлена колонка missed_cycles в таблицу hashes")
+#    
+#    try:
+#        cursor.execute("SELECT next_notification FROM hashes LIMIT 1")
+#    except sqlite3.OperationalError:
+#        cursor.execute("ALTER TABLE hashes ADD COLUMN next_notification TEXT DEFAULT ''")
+#        print("✅ Добавлена колонка next_notification в таблицу hashes")
+#    
+#    conn.commit()
+#    conn.close()
+#    print("✅ База данных создана!")
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 # ==================== ВАЛИДАЦИЯ ДАННЫХ ====================
 
@@ -313,7 +321,7 @@ async def handle_library_description(update: Update, context: ContextTypes.DEFAU
     
     await update.message.delete()
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -321,6 +329,7 @@ async def handle_library_description(update: Update, context: ContextTypes.DEFAU
             (context.user_data['library_name'], description)
         )
         conn.commit()
+        conn.close()
         
         await context.bot.edit_message_text(
             chat_id=update.effective_chat.id,
@@ -359,7 +368,7 @@ async def show_libraries(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, description FROM libraries")
     libraries = cursor.fetchall()
@@ -377,7 +386,7 @@ async def show_libraries(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     for lib_id, name, description in libraries:
         # Получаем количество хешей
-        conn = sqlite3.connect('library.db')
+        conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM hashes WHERE library_id = ?", (lib_id,))
         hash_count = cursor.fetchone()[0]
@@ -403,7 +412,7 @@ async def view_library(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     library_id = int(query.data.split('_')[-1])
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name, description FROM libraries WHERE id = ?", (library_id,))
     library = cursor.fetchone()
@@ -452,7 +461,7 @@ async def start_add_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     # Сначала выбираем библиотеку
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM libraries")
     libraries = cursor.fetchall()
@@ -493,7 +502,7 @@ async def start_add_to_library(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['last_bot_message'] = query.message.message_id
     
     # Получаем название библиотеки
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM libraries WHERE id = ?", (library_id,))
     lib_name = cursor.fetchone()[0]
@@ -529,7 +538,7 @@ async def handle_client_hash(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     
     # Проверяем, существует ли хеш уже в базе данных (ищем в любом регистре)
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Ищем хеш в любом регистре - сравниваем в верхнем регистре
@@ -582,7 +591,7 @@ async def handle_client_phone(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Проверяем, существует ли номер телефона уже в базе данных
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, hash_text FROM hashes WHERE phone_number = ?", (cleaned_phone,))
     existing_phone = cursor.fetchone()
@@ -665,7 +674,7 @@ async def handle_client_status(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.delete()
     
     # Сохраняем клиента в базу с текущим временем
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Получаем текущее время
@@ -679,6 +688,7 @@ async def handle_client_status(update: Update, context: ContextTypes.DEFAULT_TYP
         hash_id = cursor.lastrowid
         
         conn.commit()
+        conn.close()
         
         # Получаем название библиотеки для сообщения
         cursor.execute("SELECT name FROM libraries WHERE id = ?", (context.user_data['library_id'],))
@@ -773,7 +783,7 @@ async def handle_hash_for_delete(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.delete()
     
     # Ищем хеш во всех библиотеках (используем оригинальный регистр как в базе)
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -844,7 +854,7 @@ async def handle_delete_confirmation(update: Update, context: ContextTypes.DEFAU
         hash_to_delete = context.user_data.get('hash_to_delete')
         found_hashes = context.user_data.get('found_hashes', [])
         
-        conn = sqlite3.connect('library.db')
+        conn = get_connection()
         cursor = conn.cursor()
         
         # Удаляем хеш из всех библиотек по оригинальному регистру
@@ -891,7 +901,7 @@ async def show_actual_hashes(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Получаем текущее время с секундами
@@ -969,7 +979,7 @@ async def handle_search_hash(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await update.message.delete()
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -1053,7 +1063,7 @@ async def handle_search_number(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data.clear()
         return
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -1107,7 +1117,7 @@ async def view_library_hashes(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Получаем информацию о библиотеке
@@ -1194,7 +1204,7 @@ async def update_hash_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Получаем текущее время
     current_time = datetime.now().strftime("%H:%M:%S")
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Обновляем время хеша и обнуляем счетчик
@@ -1259,7 +1269,7 @@ async def send_hash_notification(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     hash_id = job.data
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Получаем информацию о хеше
@@ -1304,6 +1314,7 @@ async def send_hash_notification(context: ContextTypes.DEFAULT_TYPE):
                     (new_missed_cycles, hash_id)
                 )
                 conn.commit()
+                conn.close()
                 
                 # Обновляем сообщение с новым счетчиком
                 if new_missed_cycles > 0:
@@ -1360,7 +1371,7 @@ async def send_notifications(context: ContextTypes.DEFAULT_TYPE):
     if not context.application.bot_data.get('notifications_enabled', False):
         return
     
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Получаем текущее время с секундами
@@ -1461,7 +1472,7 @@ async def start_add_hash_to_library(update: Update, context: ContextTypes.DEFAUL
     context.user_data['last_bot_message'] = query.message.message_id
     
     # Получаем название библиотеки
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM libraries WHERE id = ?", (library_id,))
     lib_name = cursor.fetchone()[0]
@@ -1496,7 +1507,7 @@ async def handle_hash_for_library(update: Update, context: ContextTypes.DEFAULT_
         return
     
     # Проверяем, существует ли хеш уже в базе данных (ищем в любом регистре)
-    conn = sqlite3.connect('library.db')
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Ищем хеш в любом регистре - сравниваем в верхнем регистре
@@ -1661,7 +1672,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.application.bot_data['notifications_enabled'] = True
         
         # Запускаем индивидуальные jobs для всех существующих хешей
-        conn = sqlite3.connect('library.db')
+        conn = get_connection()
         cursor = conn.cursor()
         
         # Получаем текущее время
@@ -1687,7 +1698,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         
         # Для остальных хешей запускаем обычные таймеры
-        conn = sqlite3.connect('library.db')
+        conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM hashes WHERE time_text != '00:00:00'")
         all_hashes = cursor.fetchall()
