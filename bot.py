@@ -111,6 +111,9 @@ logger = logging.getLogger(__name__)
 #    conn.commit()
 #    conn.close()
 #    print("✅ База данных создана!")
+print(f"🔍 DATABASE_URL получен: {DATABASE_URL is not None}")
+if DATABASE_URL:
+    print(f"🔍 Длина DATABASE_URL: {len(DATABASE_URL)}")
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
