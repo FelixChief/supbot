@@ -123,13 +123,21 @@ else:
     print("❌ DATABASE_URL не найден!")
 
 def get_connection():
-    try:
-        # Для Railway PostgreSQL используем прямое подключение
-        return psycopg2.connect(DATABASE_URL)
-    except Exception as e:
-        print(f"❌ Ошибка подключения к базе: {e}")
-        print("Проверь что база PostgreSQL создана в Railway")
-        exit(1)
+    DATABASE_URL = os.environ.get('DATABASE_URL')
+    print(f"🔗 DATABASE_URL: {DATABASE_URL}")
+    
+    if DATABASE_URL:
+        try:
+            # Заменяем внутренний хост на внешний
+            external_url = DATABASE_URL.replace('postgres.railway.internal', 'monorail.proxy.rlwy.net')
+            print(f"🔗 Подключаемся по URL: {external_url.split('@')[1]}")
+            return psycopg2.connect(external_url)
+        except Exception as e:
+            print(f"❌ Ошибка подключения: {e}")
+    
+    # Запасной вариант - SQLite
+    print("🔗 Используем SQLite...")
+    return sqlite3.connect('library.db')
     
 def init_database():
     """Создаем базу данных с нужными таблицами"""
