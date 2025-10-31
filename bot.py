@@ -111,12 +111,25 @@ logger = logging.getLogger(__name__)
 #    conn.commit()
 #    conn.close()
 #    print("✅ База данных создана!")
-print(f"🔍 DATABASE_URL получен: {DATABASE_URL is not None}")
+print(f"🔍 Проверяем DATABASE_URL...")
 if DATABASE_URL:
-    print(f"🔍 Длина DATABASE_URL: {len(DATABASE_URL)}")
+    # Покажем только начало URL для безопасности
+    db_info = DATABASE_URL.split('@')
+    if len(db_info) > 1:
+        print(f"🔍 Подключаемся к: {db_info[1]}")
+    else:
+        print(f"🔍 DATABASE_URL: {DATABASE_URL[:50]}...")
+else:
+    print("❌ DATABASE_URL не найден!")
 
 def get_connection():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    try:
+        # Для Railway PostgreSQL используем прямое подключение
+        return psycopg2.connect(DATABASE_URL)
+    except Exception as e:
+        print(f"❌ Ошибка подключения к базе: {e}")
+        print("Проверь что база PostgreSQL создана в Railway")
+        exit(1)
     
 def init_database():
     """Создаем базу данных с нужными таблицами"""
