@@ -1744,7 +1744,8 @@ def main():
     
     init_database()
     
-    token = "8250160966:AAEOa3o4MY2GGA47vLbSb7oLNJE8w3k5lv0"
+#    token = "8250160966:AAEOa3o4MY2GGA47vLbSb7oLNJE8w3k5lv0"
+    token = os.environ.get('BOT_TOKEN')
     
     # Создаем Application с JobQueue
     application = (
