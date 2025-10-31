@@ -114,6 +114,40 @@ logger = logging.getLogger(__name__)
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
+    
+def init_database():
+    """Создаем базу данных с нужными таблицами"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Таблица библиотек
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS libraries (
+            id SERIAL PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            notifications_enabled BOOLEAN DEFAULT FALSE
+        )
+    ''')
+    
+    # Таблица хешей
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hashes (
+            id SERIAL PRIMARY KEY,
+            library_id INTEGER REFERENCES libraries(id),
+            hash_text TEXT NOT NULL,
+            phone_number TEXT NOT NULL,
+            status TEXT DEFAULT '',
+            time_text TEXT DEFAULT '00:00',
+            phone_type TEXT DEFAULT '',
+            missed_cycles INTEGER DEFAULT 0,
+            next_notification TEXT DEFAULT ''
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("✅ База данных создана!")
 
 # ==================== ВАЛИДАЦИЯ ДАННЫХ ====================
 
