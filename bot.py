@@ -1,5 +1,5 @@
 import logging
-#import sqlite3
+import sqlite3
 import os
 import re
 import asyncio
